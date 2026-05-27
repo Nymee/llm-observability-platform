@@ -1,0 +1,2 @@
+# llm-observability-platform
+Lightweight inference logging and ingestion system for an LLM application
