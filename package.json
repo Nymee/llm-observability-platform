@@ -1,0 +1,16 @@
+{
+  "name": "llm-observability-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=packages/sdk\" \"npm run dev --workspace=apps/web\" \"npm run dev --workspace=apps/ingestion\"",
+    "build": "npm run build --workspace=packages/sdk && npm run build --workspace=apps/web && npm run build --workspace=apps/ingestion",
+    "install:all": "npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
