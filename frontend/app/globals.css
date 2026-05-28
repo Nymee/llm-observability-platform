@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Smooth scrolling inside the message list */
+.messages-scroll {
+  scroll-behavior: smooth;
+}
