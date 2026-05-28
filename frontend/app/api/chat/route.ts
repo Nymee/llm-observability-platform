@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     conversationId,
   });
 
-  // ── Persist assistant message after stream finishes (non-blocking) ────────────
+  //  This only runs after stream finished (non-blocking). Persists message in DB
   result.text
     .then(async (text) => {
       await createMessage(conversationId!, "assistant", text);
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       console.error("[chat] Failed to save assistant message:", err),
     );
 
-  // ── Stream back to client — conversationId in header for new conversations ────
+  //  Stream back to client conversationId in header for new conversations
   return result.toDataStreamResponse({
     headers: { "X-Conversation-Id": conversationId },
   });
