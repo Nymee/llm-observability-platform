@@ -43,6 +43,7 @@ CREATE TABLE inference_logs (
                          COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
                      ) STORED,
     latency_ms       INTEGER CHECK (latency_ms >= 0),
+    first_token_ms   INTEGER CHECK (first_token_ms >= 0), -- time from request start to first token
     status           VARCHAR(20) NOT NULL DEFAULT 'success'
                          CHECK (status IN ('success', 'error', 'cancelled')),
     error_message    TEXT,
