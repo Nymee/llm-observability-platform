@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  #  Postgres
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-llmobs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-llmobs_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-llmobs}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-llmobs} -d ${POSTGRES_DB:-llmobs}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  #  Ingestion Service (Express)
+  ingestion:
+    build:
+      context: .
+      dockerfile: apps/ingestion/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4001:4001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-llmobs}:${POSTGRES_PASSWORD:-llmobs_secret}@postgres:5432/${POSTGRES_DB:-llmobs}
+      INGESTION_PORT: ${INGESTION_PORT:-4001}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  #  Web App (Next.js)
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-llmobs}:${POSTGRES_PASSWORD:-llmobs_secret}@postgres:5432/${POSTGRES_DB:-llmobs}
+      INGESTION_SERVICE_URL: http://ingestion:4001
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      NEXT_PUBLIC_DEFAULT_PROVIDER: ${NEXT_PUBLIC_DEFAULT_PROVIDER:-google}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ingestion:
+        condition: service_started
+
+volumes:
+  postgres_data:
