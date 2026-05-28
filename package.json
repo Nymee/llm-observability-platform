@@ -2,12 +2,13 @@
   "name": "llm-observability-platform",
   "private": true,
   "workspaces": [
-    "apps/*",
+    "frontend",
+    "ingestion",
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace=packages/sdk\" \"npm run dev --workspace=apps/web\" \"npm run dev --workspace=apps/ingestion\"",
-    "build": "npm run build --workspace=packages/sdk && npm run build --workspace=apps/web && npm run build --workspace=apps/ingestion",
+    "dev": "concurrently \"npm run dev --workspace=packages/sdk\" \"npm run dev --workspace=frontend\" \"npm run dev --workspace=ingestion\"",
+    "build": "npm run build --workspace=packages/sdk && npm run build --workspace=frontend && npm run build --workspace=ingestion",
     "install:all": "npm install"
   },
   "devDependencies": {

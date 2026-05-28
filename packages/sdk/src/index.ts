@@ -1,3 +1,5 @@
+export { chat } from './chat';
+export type { ChatInput } from './chat';
 export { getProvider, listProviders } from './registry';
 export { logInference }               from './logger';
 export { redactPII }                  from './pii';
