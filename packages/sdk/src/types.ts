@@ -21,6 +21,7 @@ export interface InferenceLogPayload {
   inputTokens?: number;
   outputTokens?: number;
   latencyMs: number;
+  firstTokenMs?: number;       // time from request start to first token arriving
   status: "success" | "error" | "cancelled";
   errorMessage?: string;
   requestPreview: string;
