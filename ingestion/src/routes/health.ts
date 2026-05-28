@@ -1,16 +1,16 @@
 import { Router } from "express";
 import { db } from "../db/client";
-import { redis } from "../queue/index";
+import { inferenceQueue } from "../queue";
 
 const router = Router();
 
 router.get("/health", async (_req, res) => {
   try {
     await db.query("SELECT 1");
-    await redis.ping();
+    await inferenceQueue.getJobCounts(); // throws if Redis is unreachable
     res.json({ status: "ok", db: "connected", redis: "connected" });
   } catch (err) {
-    res.status(503).json({ status: "degraded", error: (err as Error).message });
+    res.status(503).json({ status: "degraded", error: err instanceof Error ? err.message : String(err) });
   }
 });
 

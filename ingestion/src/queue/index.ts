@@ -1,16 +1,20 @@
 import { Queue } from "bullmq";
-import IORedis from "ioredis";
 
-export const redis = new IORedis(process.env.REDIS_URL ?? "redis://localhost:6379", {
-  maxRetriesPerRequest: null, // required by BullMQ
-});
+// Pass connection options directly — BullMQ v5 manages its own ioredis instance.
+// Never pass an external IORedis instance; BullMQ bundles its own version which
+// causes a type mismatch.
+export const redisConnection = {
+  host: process.env.REDIS_HOST ?? "localhost",
+  port: parseInt(process.env.REDIS_PORT ?? "6379", 10),
+  maxRetriesPerRequest: null as null, // required by BullMQ
+};
 
 export const inferenceQueue = new Queue("inference-logs", {
-  connection: redis,
+  connection: redisConnection,
   defaultJobOptions: {
-    attempts: 3,                          // retry failed DB writes up to 3 times
+    attempts: 3,
     backoff: { type: "exponential", delay: 1000 },
-    removeOnComplete: 100,                // keep last 100 completed jobs for debugging
+    removeOnComplete: 100,
     removeOnFail: 200,
   },
 });

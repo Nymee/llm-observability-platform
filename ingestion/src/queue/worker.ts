@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { redis, inferenceQueue } from "./index";
+import { redisConnection, inferenceQueue } from "./index";
 import { db } from "../db/client";
 import type { InferenceLogInput } from "../validators/log";
 
@@ -35,7 +35,7 @@ export function startWorker() {
         ]
       );
     },
-    { connection: redis, concurrency: 5 }
+    { connection: redisConnection, concurrency: 5 }
   );
 
   worker.on("completed", (job) => {

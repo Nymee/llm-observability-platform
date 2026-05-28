@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 interface Conversation {
   id: string;
   title: string;
@@ -27,6 +29,16 @@ export default function Sidebar({ conversations, selectedId, onNew, onSelect, on
         >
           + New Chat
         </button>
+      </div>
+
+      {/* Dashboard link */}
+      <div className="px-4 py-2 border-b border-gray-700">
+        <Link
+          href="/dashboard"
+          className="block text-xs text-gray-400 hover:text-white transition-colors py-1"
+        >
+          Dashboard →
+        </Link>
       </div>
 
       {/* Conversation list */}

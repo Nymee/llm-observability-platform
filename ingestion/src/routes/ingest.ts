@@ -18,7 +18,12 @@ router.post("/ingest", async (req, res) => {
     });
   }
 
-  await inferenceQueue.add("log", result.data);
+  try {
+    await inferenceQueue.add("log", result.data);
+  } catch (err) {
+    console.error("[ingest] failed to enqueue job:", err instanceof Error ? err.message : String(err));
+    return res.status(503).json({ error: "Queue unavailable" });
+  }
 
   return res.status(202).json({ queued: true });
 });

@@ -44,24 +44,35 @@ export async function POST(req: NextRequest) {
 
   // ── Resolve conversation ──────────────────────────────────────────────────────
   let conversationId = body.conversationId;
-  if (!conversationId) {
-    const convo = await createConversation(
-      provider,
-      model ?? "gemini-1.5-flash",
-    );
-    conversationId = convo.id;
+  try {
+    if (!conversationId) {
+      const convo = await createConversation(
+        provider,
+        model ?? "gemini-1.5-flash",
+      );
+      conversationId = convo.id;
+    }
+
+    // ── Persist user message ────────────────────────────────────────────────────
+    await createMessage(conversationId, "user", lastUserMessage.content);
+  } catch (err) {
+    console.error("[chat] DB error before LLM call:", err);
+    return Response.json({ error: "Failed to initialise conversation" }, { status: 500 });
   }
 
-  // ── Persist user message ──────────────────────────────────────────────────────
-  await createMessage(conversationId, "user", lastUserMessage.content);
-
   // ── Call SDK — provider selection + streaming + inference logging ─────────────
-  const result = await chat({
-    provider: provider as Provider,
-    model,
-    messages,
-    conversationId,
-  });
+  let result;
+  try {
+    result = await chat({
+      provider: provider as Provider,
+      model,
+      messages,
+      conversationId,
+    });
+  } catch (err) {
+    console.error("[chat] LLM call failed:", err);
+    return Response.json({ error: "LLM provider error" }, { status: 502 });
+  }
 
   //  This only runs after stream finished (non-blocking). Persists message in DB
   result.text
@@ -73,7 +84,7 @@ export async function POST(req: NextRequest) {
       console.error("[chat] Failed to save assistant message:", err),
     );
 
-  //  Stream back to client conversationId in header for new conversations
+  //  Stream back to client; conversationId header lets the UI update the sidebar
   return result.toDataStreamResponse({
     headers: { "X-Conversation-Id": conversationId },
   });

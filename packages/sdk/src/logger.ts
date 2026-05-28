@@ -18,7 +18,7 @@ export async function logInference(
   } catch (err) {
     console.error(
       "[sdk] Failed to deliver inference log:",
-      (err as Error).message,
+      err instanceof Error ? err.message : String(err),
     );
   }
 }
