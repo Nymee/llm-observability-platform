@@ -3,7 +3,7 @@
 export type Provider = "google" | "openai" | "anthropic";
 
 const PROVIDERS: { value: Provider; label: string; model: string }[] = [
-  { value: "google",    label: "Gemini",      model: "gemini-1.5-flash" },
+  { value: "google",    label: "Gemini",      model: "gemini-2.5-flash" },
   { value: "openai",    label: "GPT-4o Mini", model: "gpt-4o-mini"      },
   { value: "anthropic", label: "Claude Haiku", model: "claude-haiku-4-5-20251001" },
 ];

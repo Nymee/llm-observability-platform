@@ -24,6 +24,7 @@ export async function chat({ provider, model, messages, conversationId, options 
   const modelInstance = providerInstance.getModel(resolvedModel) as any;
 
   const startedAt = Date.now();
+  let firstTokenAt: number | null = null;
   const lastUserMessage =
     [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
@@ -32,8 +33,15 @@ export async function chat({ provider, model, messages, conversationId, options 
     messages,
     maxTokens: options?.maxTokens,
     temperature: options?.temperature,
+    onError: (event) => {
+      console.error("[sdk] stream error from provider:", event.error);
+    },
+    onChunk: () => {
+      if (!firstTokenAt) firstTokenAt = Date.now();
+    },
     onFinish: async ({ text, usage, finishReason }) => {
       const latencyMs = Date.now() - startedAt;
+      const firstTokenMs = firstTokenAt ? firstTokenAt - startedAt : undefined;
 
       const status =
         finishReason === "stop" || finishReason === "length"
@@ -50,6 +58,7 @@ export async function chat({ provider, model, messages, conversationId, options 
         inputTokens: usage.promptTokens,
         outputTokens: usage.completionTokens,
         latencyMs,
+        firstTokenMs,
         status,
         requestPreview: redactPII(lastUserMessage.slice(0, 500)),
         responsePreview: redactPII(text.slice(0, 500)),

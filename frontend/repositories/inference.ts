@@ -74,3 +74,24 @@ export async function getLogsByConversation(conversationId: string): Promise<Inf
   );
   return rows;
 }
+
+export interface ProviderBreakdown {
+  provider: string;
+  request_count: number;
+  avg_latency_ms: number;
+  total_tokens: number;
+}
+
+export async function getProviderBreakdown(): Promise<ProviderBreakdown[]> {
+  const { rows } = await db.query<ProviderBreakdown>(`
+    SELECT
+      provider,
+      COUNT(*)                       AS request_count,
+      COALESCE(AVG(latency_ms), 0)::int AS avg_latency_ms,
+      COALESCE(SUM(total_tokens), 0) AS total_tokens
+    FROM inference_logs
+    GROUP BY provider
+    ORDER BY request_count DESC
+  `);
+  return rows;
+}
