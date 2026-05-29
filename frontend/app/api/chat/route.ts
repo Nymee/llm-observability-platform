@@ -59,10 +59,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Failed to initialise conversation" }, { status: 500 });
   }
 
+  // Keep only the most recent turns so we don't blow the context window
+  const contextMessages = messages.slice(-10);
+
   log("chat", "calling LLM...");
   let result;
   try {
-    result = await chat({ provider: provider as Provider, model, messages, conversationId });
+    result = await chat({ provider: provider as Provider, model, messages: contextMessages, conversationId });
     log("chat", "LLM stream started");
   } catch (err) {
     logError("chat", "LLM call failed", err);

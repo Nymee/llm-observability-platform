@@ -170,6 +170,28 @@ export default function DashboardPage() {
               </div>
             </section>
 
+            {/* Throughput chart */}
+            <section>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                Throughput (requests/hr) — last 24 h
+              </h2>
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                {latencyPoints.length === 0 ? (
+                  <p className="text-gray-400 text-sm py-8 text-center">No data yet</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={latencyPoints}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip formatter={(v: number) => [v, "Requests"]} />
+                      <Bar dataKey="request_count" fill="#6366f1" name="Requests" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </section>
+
             {/* Error rate chart */}
             <section>
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
