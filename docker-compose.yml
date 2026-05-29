@@ -1,7 +1,6 @@
 version: "3.9"
 
 services:
-  #  Postgres
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -24,26 +23,39 @@ services:
       timeout: 5s
       retries: 10
 
-  #  Ingestion Service (Express)
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   ingestion:
     build:
       context: .
-      dockerfile: apps/ingestion/Dockerfile
+      dockerfile: ingestion/Dockerfile
     restart: unless-stopped
     ports:
       - "4001:4001"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-llmobs}:${POSTGRES_PASSWORD:-llmobs_secret}@postgres:5432/${POSTGRES_DB:-llmobs}
       INGESTION_PORT: ${INGESTION_PORT:-4001}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  #  Web App (Next.js)
-  web:
+  frontend:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
+      dockerfile: frontend/Dockerfile
     restart: unless-stopped
     ports:
       - "3000:3000"

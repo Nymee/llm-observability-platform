@@ -7,6 +7,7 @@ import {
   autoTitleConversation,
 } from "@/repositories/conversations";
 import { createMessage } from "@/repositories/messages";
+import { log, logError } from "@/lib/logger";
 
 const RequestSchema = z.object({
   messages: z
@@ -17,75 +18,64 @@ const RequestSchema = z.object({
       }),
     )
     .min(1),
-  conversationId: z.string().uuid().optional(),
+  conversationId: z.string().uuid().nullish(),
   provider: z.enum(["google", "openai", "anthropic"]).default("google"),
   model: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
-  // ── Parse + validate ─────────────────────────────────────────────────────────
+  log("chat", "request received");
+
   let body;
   try {
     body = RequestSchema.parse(await req.json());
   } catch (err) {
-    return Response.json(
-      { error: "Invalid request", details: err },
-      { status: 400 },
-    );
+    logError("chat", "validation failed", err);
+    return Response.json({ error: "Invalid request", details: err }, { status: 400 });
   }
 
   const { messages, provider, model } = body;
-  const lastUserMessage = [...messages]
-    .reverse()
-    .find((m) => m.role === "user");
+  log("chat", `provider=${provider} model=${model ?? "default"} messages=${messages.length}`);
+
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUserMessage) {
     return Response.json({ error: "No user message found" }, { status: 400 });
   }
 
-  // ── Resolve conversation ──────────────────────────────────────────────────────
   let conversationId = body.conversationId;
   try {
     if (!conversationId) {
-      const convo = await createConversation(
-        provider,
-        model ?? "gemini-1.5-flash",
-      );
+      log("chat", "creating new conversation");
+      const convo = await createConversation(provider, model ?? "gemini-2.5-flash");
       conversationId = convo.id;
+      log("chat", `conversation created: ${conversationId}`);
+    } else {
+      log("chat", `resuming conversation: ${conversationId}`);
     }
-
-    // ── Persist user message ────────────────────────────────────────────────────
     await createMessage(conversationId, "user", lastUserMessage.content);
+    log("chat", "user message saved");
   } catch (err) {
-    console.error("[chat] DB error before LLM call:", err);
+    logError("chat", "DB error before LLM call", err);
     return Response.json({ error: "Failed to initialise conversation" }, { status: 500 });
   }
 
-  // ── Call SDK — provider selection + streaming + inference logging ─────────────
+  log("chat", "calling LLM...");
   let result;
   try {
-    result = await chat({
-      provider: provider as Provider,
-      model,
-      messages,
-      conversationId,
-    });
+    result = await chat({ provider: provider as Provider, model, messages, conversationId });
+    log("chat", "LLM stream started");
   } catch (err) {
-    console.error("[chat] LLM call failed:", err);
+    logError("chat", "LLM call failed", err);
     return Response.json({ error: "LLM provider error" }, { status: 502 });
   }
 
-  //  This only runs after stream finished (non-blocking). Persists message in DB
   result.text
     .then(async (text) => {
+      log("chat", `stream complete, saving assistant message (${text.length} chars)`);
       await createMessage(conversationId!, "assistant", text);
       await autoTitleConversation(conversationId!, lastUserMessage.content);
     })
-    .catch((err) =>
-      console.error("[chat] Failed to save assistant message:", err),
-    );
+    .catch((err) => logError("chat", "failed to save assistant message", err));
 
-  //  Stream back to client; conversationId header lets the UI update the sidebar
-  return result.toDataStreamResponse({
-    headers: { "X-Conversation-Id": conversationId },
-  });
+  return result.toDataStreamResponse({ headers: { "X-Conversation-Id": conversationId } });
 }

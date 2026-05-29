@@ -28,7 +28,7 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [provider, setProvider] = useState<Provider>("google");
-  const [model, setModel] = useState<string>("gemini-1.5-flash");
+  const [model, setModel] = useState<string>("gemini-2.5-flash");
 
   // useChat is a Vercel SDK: it manages messages state, input state, streaming, and the POST call.
   const {

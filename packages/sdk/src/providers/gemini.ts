@@ -3,7 +3,7 @@ import type { ILLMProvider } from '../types';
 
 export class GeminiProvider implements ILLMProvider {
   readonly name = 'google' as const;
-  readonly defaultModel = 'gemini-1.5-flash';
+  readonly defaultModel = 'gemini-2.5-flash';
 
   getModel(modelId?: string) {
     return google(modelId ?? this.defaultModel);

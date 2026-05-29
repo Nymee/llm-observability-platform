@@ -33,8 +33,10 @@ export async function chat({ provider, model, messages, conversationId, options 
     messages,
     maxTokens: options?.maxTokens,
     temperature: options?.temperature,
+    onError: (event) => {
+      console.error("[sdk] stream error from provider:", event.error);
+    },
     onChunk: () => {
-      // Capture the timestamp of the very first token only
       if (!firstTokenAt) firstTokenAt = Date.now();
     },
     onFinish: async ({ text, usage, finishReason }) => {
