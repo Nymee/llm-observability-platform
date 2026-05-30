@@ -130,6 +130,7 @@ export default function ChatPage() {
         input={input}
         isLoading={isLoading}
         provider={provider}
+        model={model}
         streamError={streamError}
         onProviderChange={handleProviderChange}
         onInputChange={handleInputChange}

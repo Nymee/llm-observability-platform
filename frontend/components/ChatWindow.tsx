@@ -12,6 +12,7 @@ interface Props {
   input: string;
   isLoading: boolean;
   provider: Provider;
+  model: string;
   streamError: string | null;
   onProviderChange: (provider: Provider, model: string) => void;
   onInputChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
@@ -20,7 +21,7 @@ interface Props {
 }
 
 export default function ChatWindow({
-  messages, input, isLoading, provider, streamError,
+  messages, input, isLoading, provider, model, streamError,
   onProviderChange, onInputChange, onSubmit, onStop,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -38,7 +39,7 @@ export default function ChatWindow({
           {messages.length === 0 ? "Start a new conversation" : `${messages.length} messages`}
         </span>
         <div className="flex items-center gap-3">
-          <ProviderSelector value={provider} onChange={onProviderChange} />
+          <ProviderSelector value={provider} model={model} onChange={onProviderChange} />
           <Link
             href="/dashboard"
             className="text-xs text-white/50 hover:text-white/90 transition-colors border border-white/10 rounded-lg px-3 py-1.5 bg-white/5 hover:bg-white/10"
@@ -58,6 +59,15 @@ export default function ChatWindow({
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
+        {isLoading && messages[messages.length - 1]?.role === "user" && (
+          <div className="flex justify-start mb-4">
+            <div className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
+              <span className="w-2 h-2 bg-white/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-2 h-2 bg-white/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-2 h-2 bg-white/40 rounded-full animate-bounce" />
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
