@@ -1,19 +1,23 @@
 # LLM Observability Platform
 
-Multi-provider chatbot with real-time inference logging, a BullMQ ingestion pipeline, and a live dashboard.
+A multi-provider chatbot with real-time inference logging, an event-driven ingestion pipeline, live dashboards, and a one-command Docker Compose setup. Deployed on self-hosted Kubernetes.
 
-## One-command start
+---
+
+## Quick Start
 
 ```bash
-cp .env.example .env          # fill in at least GOOGLE_GENERATIVE_AI_API_KEY
+cp .env.example .env        # fill in at least GOOGLE_GENERATIVE_AI_API_KEY and GROQ_API_KEY
 docker compose up --build
 ```
 
-| Service    | URL                       |
-|------------|---------------------------|
-| Chat UI    | http://localhost:3000      |
-| Dashboard  | http://localhost:3000/dashboard |
-| Ingestion  | http://localhost:4001      |
+| Service   | URL                             |
+| --------- | ------------------------------- |
+| Chat UI   | http://localhost:3000           |
+| Dashboard | http://localhost:3000/dashboard |
+| Ingestion | http://localhost:4001/health    |
+
+---
 
 ## Architecture
 
@@ -22,95 +26,151 @@ Browser
   │
   │  SSE stream (POST /api/chat)
   ▼
-Next.js  ──── repositories ────► PostgreSQL
-  │                 ▲
-  │  SDK chat()     │ inference_logs
-  ▼                 │
-@llmobs/sdk ────────┘
-  │
-  │  POST /ingest (fire-and-forget)
-  ▼
-Express ingestion service
-  │
-  │  enqueue job
-  ▼
-BullMQ (Redis) ── worker ──► PostgreSQL
+Next.js (frontend + API routes)
+  │                  │
+  │                  └─── repositories ──► PostgreSQL
+  │                            ▲
+  │  @llmobs/sdk               │ messages, conversations
+  │  ├── provider selection    │
+  │  ├── streamText()          │
+  │  ├── TTFT capture          │
+  │  ├── PII redaction         │
+  │  └── fire-and-forget log   │
+  │             │              │
+  │             │ POST /ingest │ inference_logs
+  ▼             ▼              │
+Express ingestion service      │
+  │                            │
+  │  enqueue job               │
+  ▼                            │
+BullMQ (Redis) ── worker ──────┘
 ```
 
-### Components
+### Component Decisions
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| Chat UI + API routes | Next.js 15 App Router | SSE streaming via `Response` + client-side `useChat` hook; one deploy unit |
-| SDK | TypeScript (`@llmobs/sdk`) | Provider abstraction, TTFT capture, PII redaction, fire-and-forget logging all in one `chat()` call |
-| Ingestion service | Express + BullMQ | Persistent Node process required for BullMQ worker; decouples logging from request path |
-| Queue | Redis + BullMQ v5 | Exponential-backoff retry, job persistence across restarts, concurrency control |
-| Database | PostgreSQL 16 (raw `pg`) | Explicit schema ownership; no ORM migration layer to debug |
+| Layer                | Technology                 | Why                                                                                                   |
+| -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Chat UI + API routes | Next.js 15 App Router      | SSE streaming via `Response` + `useChat` hook; one deploy unit                                        |
+| SDK                  | `@llmobs/sdk` (TypeScript) | Provider abstraction, TTFT capture, PII redaction, fire-and-forget logging — all in one `chat()` call |
+| Ingestion service    | Express + BullMQ           | BullMQ workers need a persistent process — Next.js serverless routes can't host them                  |
+| Queue                | Redis + BullMQ v5          | Retry with exponential backoff, job durability across restarts, concurrency control                   |
+| Database             | PostgreSQL 16 (raw `pg`)   | Explicit schema ownership; no ORM migration layer                                                     |
 
 ### Why not a single Next.js backend?
 
-Next.js API routes are serverless-style — each invocation is stateless and short-lived. BullMQ workers need a persistent process that survives between jobs to poll Redis and execute retries. Running a worker inside a Next.js route would either never start (`await` resolves immediately) or leak across invocations. The separate Express process is the minimal correct solution.
+Next.js API routes are stateless and short-lived. BullMQ workers need a persistent process that survives between jobs to poll Redis and retry failures. Running a worker inside a Next.js route would either never start or leak across invocations.
 
-### Why Express + BullMQ instead of pure REST logging?
+### Why BullMQ over direct DB writes?
 
-Fire-and-forget HTTP from the SDK means a single slow or crashed POST won't block the user's chat response. BullMQ adds:
-- **Retries with exponential backoff** — transient DB failures don't lose logs
-- **Concurrency control** — worker processes 5 jobs in parallel without overloading Postgres
+Fire-and-forget HTTP from the SDK means a slow or failed DB write never blocks the user's response. BullMQ adds:
+
+- **Retries with exponential backoff** — transient failures don't lose logs
+- **Concurrency control** — 5 parallel DB writes without overwhelming Postgres
 - **Durability** — jobs survive an ingestion service restart
 
-## Schema design
+---
+
+## Ingestion Flow
+
+1. `chat()` in the SDK calls `streamText()` with `onChunk` (TTFT) and `onFinish` (log dispatch)
+2. `onFinish` fires after the stream completes — PII is redacted, metadata is assembled
+3. `logInference()` POSTs to the ingestion service with a 3-second timeout — errors are swallowed so logging never surfaces to the user
+4. The ingestion service validates the payload with Zod and enqueues a BullMQ job (202 response)
+5. The BullMQ worker picks up the job and `INSERT`s into `inference_logs`
+
+---
+
+## Logging Strategy
+
+- **Fire-and-forget** — logging is async and never blocks the chat response
+- **TTFT (time-to-first-token)** — captured via `onChunk`, stored as `first_token_ms`
+- **PII redaction** — email, phone, and SSN patterns are stripped from request/response previews before storage
+- **Short context window** — only the last 10 messages are sent to the model per request to control token costs
+- **Status mapping** — Vercel AI SDK's `finishReason` (`stop`, `length`, `error`, `other`) is mapped to `success`, `error`, or `cancelled`
+
+---
+
+## Schema Design
 
 ```sql
-conversations   -- one row per chat session; tracks provider + model
-messages        -- full message history; FK to conversations (CASCADE DELETE)
-inference_logs  -- one row per LLM call; FK to conversations
+conversations   — one row per chat session (provider, model, title, timestamps)
+messages        — full message history (role, content, FK to conversations CASCADE DELETE)
+inference_logs  — one row per LLM API call (metrics + metadata per call)
 ```
 
-Key decisions:
+### Key Decisions
 
-- **`total_tokens` is a generated column** (`COALESCE(input_tokens,0) + COALESCE(output_tokens,0) STORED`) — never out of sync, never manually set.
-- **`first_token_ms`** — captures TTFT (time-to-first-token) independently from `latency_ms` (end-to-end). Both have `CHECK (>= 0)`.
-- **`status` CHECK constraint** — only `'success'`, `'error'`, `'cancelled'` are valid. Mapped from Vercel SDK's `finishReason`.
-- **`request_preview` / `response_preview`** — capped at 500 chars, PII-redacted (email, phone, SSN patterns stripped) before insert.
-- **No `message_id` FK on `inference_logs`** — inference logs belong to a conversation, not a specific message. A single user turn may trigger retries or parallel calls; tying to a message_id creates false 1:1 coupling.
-- **`pgcrypto` extension** — `gen_random_uuid()` used for all primary keys; explicit rather than relying on a Postgres version assumption.
+- **`total_tokens` is a generated column** — `COALESCE(input_tokens,0) + COALESCE(output_tokens,0) STORED`. Never out of sync, never manually maintained.
+- **`first_token_ms` separate from `latency_ms`** — TTFT and end-to-end latency measure different things. Both have `CHECK (>= 0)`.
+- **`status` CHECK constraint** — only `'success'`, `'error'`, `'cancelled'` are valid. Enforced at the DB level, not just application level.
+- **`request_preview` / `response_preview` capped at 500 chars** — PII-redacted before insert. Avoids storing large blobs in a hot table.
+- **`metadata JSONB`** — flexible bag for `finishReason`, timestamp, and any future fields. Typed columns for things you aggregate; JSONB for the rest.
+- **No `message_id` FK on `inference_logs`** — a single user turn can trigger retries or parallel calls. Tying a log to a specific message creates false 1:1 coupling.
+- **`pgcrypto` extension** — `gen_random_uuid()` for all primary keys, explicit rather than relying on a Postgres version assumption.
 
-## Environment variables
+---
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `GOOGLE_GENERATIVE_AI_API_KEY` | yes | — | Gemini API key |
-| `OPENAI_API_KEY` | no | — | OpenAI API key |
-| `ANTHROPIC_API_KEY` | no | — | Anthropic API key |
-| `DATABASE_URL` | yes | see compose | PostgreSQL connection string |
-| `INGESTION_SERVICE_URL` | yes | `http://localhost:4001` | URL the SDK POSTs logs to |
-| `REDIS_HOST` | no | `localhost` | Redis host for BullMQ |
-| `REDIS_PORT` | no | `6379` | Redis port |
-| `NEXT_PUBLIC_DEFAULT_PROVIDER` | no | `google` | Default provider shown in UI |
+## Environment Variables
 
-## SDK usage
+| Variable                       | Required | Description                                  |
+| ------------------------------ | -------- | -------------------------------------------- |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | yes      | Gemini API key (free at aistudio.google.com) |
+| `GROQ_API_KEY`                 | yes      | Groq API key (free at console.groq.com)      |
+| `OPENAI_API_KEY`               | no       | OpenAI API key                               |
+| `ANTHROPIC_API_KEY`            | no       | Anthropic API key                            |
+| `DATABASE_URL`                 | yes      | PostgreSQL connection string                 |
+| `INGESTION_SERVICE_URL`        | yes      | URL the SDK POSTs logs to                    |
+| `REDIS_HOST`                   | no       | Redis host (default: localhost)              |
+| `REDIS_PORT`                   | no       | Redis port (default: 6379)                   |
 
-```typescript
-import { chat } from "@llmobs/sdk";
+---
 
-const result = await chat({
-  provider: "google",
-  model: "gemini-1.5-flash",
-  conversationId: "uuid-here",
-  messages: [{ role: "user", content: "Hello" }],
-});
+## Kubernetes Deployment
 
-// result is a Vercel AI SDK StreamTextResult — pipe directly to Response
-return result.toDataStreamResponse();
+Manifests are in `k8s/`. Deployable on any cluster with:
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/
 ```
 
-`chat()` owns the full lifecycle: provider selection, `streamText()` call, TTFT capture via `onChunk`, and fire-and-forget log dispatch in `onFinish`. Logging failures are swallowed — they never surface to the caller.
+Tested on a local minikube cluster. For a remote server, install k3s:
 
-## What I'd improve with more time
+```bash
+curl -sfL https://get.k3s.io | sh -
+```
 
-- **Auth** — conversations are currently unscoped; add a session cookie and filter by user ID
-- **Dashboard time-range picker** — currently fixed at last 24 h
-- **Per-model latency breakdown** — the data is there; add a grouped bar chart
-- **Worker process separation** — split the BullMQ worker into its own container for independent scaling
-- **OpenTelemetry export** — emit spans to Jaeger/Tempo alongside the custom Postgres logs
-- **Streaming token throughput** — count tokens per second from `onChunk`; currently only TTFT is captured
+The frontend is exposed via `NodePort 30000`. Access at `http://<server-ip>:30000`.
+
+---
+
+## Scaling Considerations
+
+- **Ingestion service** is stateless (except the BullMQ worker) — horizontally scalable. In production, split the worker into its own container.
+- **Frontend** is stateless — multiple replicas behind a load balancer work without coordination.
+- **Postgres** is the current bottleneck — connection pooling (PgBouncer) and read replicas would be the first scaling step.
+- **Redis** is used only for the job queue — not for session state, so a single instance is fine until very high throughput.
+
+---
+
+## Failure Handling
+
+- **Ingestion service down** — SDK swallows the error silently. Chat still works; logs are lost for that call.
+- **Redis down** — `inferenceQueue.add()` throws a 503. Chat still works; logs are lost.
+- **Postgres down** — chat route returns 500 before the LLM call. Ingestion worker retries the job up to 3 times with exponential backoff.
+- **LLM provider error** — streamed as a `3:` error chunk to the client. UI shows a friendly error message. Error is logged to `inference_logs` with `status: 'error'`.
+- **Rate limits** — BullMQ retries are not used for rate limit errors (they're not transient). The UI surfaces the rate limit message directly to the user.
+
+---
+
+## What I Would Improve With More Time
+
+- **Auth** — conversations are unscoped. Add session cookies and filter by user ID.
+- **Streaming token throughput** — count tokens per second from `onChunk`. Currently only TTFT is captured per-token.
+- **Dashboard time-range picker** — currently fixed at last 24 h.
+- **Per-model latency breakdown** — data is in the DB, just needs another chart.
+- **Worker process separation** — split the BullMQ worker into its own container for independent scaling and restarts.
+- **OpenTelemetry export** — emit spans to Jaeger/Tempo alongside the custom Postgres logs.
+- **Ingestion service HA** — single point of failure currently. A second replica with Redis as shared queue coordinator would fix this.
+- **PgBouncer** — connection pooling in front of Postgres for high concurrency.
+- **Structured logging** — replace `console.log` with a structured logger (Winston or Pino) that emits JSON for log aggregation pipelines.

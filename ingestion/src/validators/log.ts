@@ -3,7 +3,7 @@ import { z } from "zod";
 // Must match InferenceLogPayload in packages/sdk/src/types.ts
 export const InferenceLogSchema = z.object({
   conversationId: z.string().uuid(),
-  provider:       z.enum(["google", "openai", "anthropic"]),
+  provider:       z.enum(["google", "openai", "anthropic", "groq"]),
   model:          z.string().min(1),
   inputTokens:    z.number().int().nonnegative().optional(),
   outputTokens:   z.number().int().nonnegative().optional(),

@@ -27,8 +27,9 @@ interface Conversation {
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [provider, setProvider] = useState<Provider>("google");
-  const [model, setModel] = useState<string>("gemini-2.5-flash");
+  const [provider, setProvider] = useState<Provider>("groq");
+  const [model, setModel] = useState<string>("llama-3.3-70b-versatile");
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   // useChat is a Vercel SDK: it manages messages state, input state, streaming, and the POST call.
   const {
@@ -52,7 +53,16 @@ export default function ChatPage() {
         fetchConversations();
       }
     },
+    onError: (err) => {
+      const msg = err.message ?? String(err);
+      if (msg.includes("429") || msg.includes("quota") || msg.includes("rate")) {
+        setStreamError("Rate limit reached — please wait a minute and try again.");
+      } else {
+        setStreamError("Something went wrong. Please try again.");
+      }
+    },
     onFinish: () => {
+      setStreamError(null);
       fetchConversations();
     },
   });
@@ -107,7 +117,7 @@ export default function ChatPage() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
       <Sidebar
         conversations={conversations}
         selectedId={conversationId}
@@ -120,6 +130,7 @@ export default function ChatPage() {
         input={input}
         isLoading={isLoading}
         provider={provider}
+        streamError={streamError}
         onProviderChange={handleProviderChange}
         onInputChange={handleInputChange}
         onSubmit={handleSubmit}

@@ -1,4 +1,4 @@
-export type Provider = "google" | "openai" | "anthropic";
+export type Provider = "google" | "openai" | "anthropic" | "groq";
 
 export type MessageRole = "user" | "assistant" | "system";
 
