@@ -12,14 +12,15 @@ const PROVIDERS: { value: Provider; label: string; model: string; badge: string 
 
 interface Props {
   value: Provider;
+  model: string;
   onChange: (provider: Provider, model: string) => void;
 }
 
-export default function ProviderSelector({ value, onChange }: Props) {
+export default function ProviderSelector({ value, model, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const selected = PROVIDERS.find((p) => p.value === value) ?? PROVIDERS[1];
+  const selected = PROVIDERS.find((p) => p.value === value && p.model === model) ?? PROVIDERS[1];
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
