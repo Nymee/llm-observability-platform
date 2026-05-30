@@ -1,12 +1,14 @@
 import { GeminiProvider }    from './providers/gemini';
 import { OpenAIProvider }    from './providers/openai';
 import { AnthropicProvider } from './providers/anthropic';
+import { GroqProvider }      from './providers/groq';
 import type { ILLMProvider, Provider } from './types';
 
 const PROVIDERS: Record<Provider, ILLMProvider> = {
   google:    new GeminiProvider(),
   openai:    new OpenAIProvider(),
   anthropic: new AnthropicProvider(),
+  groq:      new GroqProvider(),
 };
 
 // Returns the provider instance for a given name.

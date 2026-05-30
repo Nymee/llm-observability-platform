@@ -34,7 +34,7 @@ CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 -- One row per LLM API call. possible columns written with metadata for JSONB structure
 CREATE TABLE inference_logs (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id  UUID         NOT NULL REFERENCES conversations(id),
+    conversation_id  UUID         REFERENCES conversations(id) ON DELETE SET NULL,
     provider         VARCHAR(50)  NOT NULL,
     model            VARCHAR(100) NOT NULL,
     input_tokens     INTEGER,

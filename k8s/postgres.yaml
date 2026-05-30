@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: llmobs
+spec:
+  accessModes:
+    - ReadWriteOnce       # one node can mount this at a time
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: llmobs
+spec:
+  replicas: 1             # only ever 1 — multiple Postgres replicas need special setup
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - configMapRef:
+                name: llmobs-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: llmobs-secret
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: init-sql
+          configMap:
+            name: postgres-init
+---
+# Stores the init.sql so Postgres runs it on first boot
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: llmobs
+data:
+  init.sql: |
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+    CREATE TABLE conversations (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title       VARCHAR(255)    NOT NULL DEFAULT 'New Conversation',
+        provider    VARCHAR(50)     NOT NULL DEFAULT 'google',
+        model       VARCHAR(100)    NOT NULL DEFAULT 'gemini-2.5-flash',
+        is_active   BOOLEAN         NOT NULL DEFAULT TRUE,
+        created_at  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE messages (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        role            VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+        content         TEXT        NOT NULL,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
+
+    CREATE TABLE inference_logs (
+        id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id  UUID         REFERENCES conversations(id) ON DELETE SET NULL,
+        provider         VARCHAR(50)  NOT NULL,
+        model            VARCHAR(100) NOT NULL,
+        input_tokens     INTEGER,
+        output_tokens    INTEGER,
+        total_tokens     INTEGER GENERATED ALWAYS AS (
+                             COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                         ) STORED,
+        latency_ms       INTEGER CHECK (latency_ms >= 0),
+        first_token_ms   INTEGER CHECK (first_token_ms >= 0),
+        status           VARCHAR(20) NOT NULL DEFAULT 'success'
+                             CHECK (status IN ('success', 'error', 'cancelled')),
+        error_message    TEXT,
+        request_preview  VARCHAR(500),
+        response_preview VARCHAR(500),
+        metadata         JSONB,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX idx_inference_logs_conversation_id ON inference_logs(conversation_id);
+    CREATE INDEX idx_inference_logs_created_at      ON inference_logs(created_at);
+    CREATE INDEX idx_inference_logs_provider        ON inference_logs(provider);
+    CREATE INDEX idx_inference_logs_status          ON inference_logs(status);
+
+    CREATE OR REPLACE FUNCTION update_updated_at()
+    RETURNS TRIGGER LANGUAGE plpgsql AS $$
+    BEGIN
+        NEW.updated_at = NOW();
+        RETURN NEW;
+    END;
+    $$;
+
+    CREATE TRIGGER conversations_updated_at
+        BEFORE UPDATE ON conversations
+        FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-svc
+  namespace: llmobs
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

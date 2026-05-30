@@ -14,6 +14,9 @@ out/
 .env.local
 .env.*.local
 
+# Kubernetes secrets — contains real API keys, never commit
+k8s/secret.yaml
+
 # Logs
 *.log
 npm-debug.log*

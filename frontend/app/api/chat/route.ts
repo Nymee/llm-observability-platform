@@ -19,7 +19,7 @@ const RequestSchema = z.object({
     )
     .min(1),
   conversationId: z.string().uuid().nullish(),
-  provider: z.enum(["google", "openai", "anthropic"]).default("google"),
+  provider: z.enum(["google", "openai", "anthropic", "groq"]).default("google"),
   model: z.string().optional(),
 });
 
