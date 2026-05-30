@@ -106,6 +106,8 @@ inference_logs  — one row per LLM API call (metrics + metadata per call)
 - **`request_preview` / `response_preview` capped at 500 chars** — PII-redacted before insert. Avoids storing large blobs in a hot table.
 - **`metadata JSONB`** — flexible bag for `finishReason`, timestamp, and any future fields. Typed columns for things you aggregate; JSONB for the rest.
 - **No `message_id` FK on `inference_logs`** — a single user turn can trigger retries or parallel calls. Tying a log to a specific message creates false 1:1 coupling.
+- **`inference_logs` are retained when a conversation is deleted** — `conversation_id` uses `ON DELETE SET NULL` so deleting a conversation orphans the log rows rather than removing them. Inference data has independent analytical value; losing it to a UI delete action would be wrong.
+- **`messages` cascade-delete on conversation delete** — chat history is owned by the conversation and has no value without it. `inference_logs` are the opposite — they're the observability record.
 - **`pgcrypto` extension** — `gen_random_uuid()` for all primary keys, explicit rather than relying on a Postgres version assumption.
 
 ---
