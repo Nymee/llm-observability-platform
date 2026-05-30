@@ -59,6 +59,15 @@ export default function ChatWindow({
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
+        {isLoading && messages[messages.length - 1]?.role === "user" && (
+          <div className="flex justify-start mb-4">
+            <div className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
+              <span className="w-2 h-2 bg-white/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-2 h-2 bg-white/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-2 h-2 bg-white/40 rounded-full animate-bounce" />
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
